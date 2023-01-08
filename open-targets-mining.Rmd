@@ -1,0 +1,56 @@
+---
+title: "open targets mining"
+author: "Sofia Salazar"
+date: "2023-01-08"
+output: html_document
+---
+
+## Setup
+
+```{bash}
+qlogin
+module load r/4.0.2
+cd /mnt/Citosina/amedina/ssalazar/targets/datasets
+```
+
+1. Downloading the open targets datasets
+
+- All open targets datasets info: https://platform.opentargets.org/downloads/data
+- Documentation on data accessing: https://platform-docs.opentargets.org/data-access/datasets
+### Downloading the **all** dataset in Parquet format
+
+```{bash}
+# Diseases
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/diseases .
+
+# Targets
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/targets .
+
+# Disease to phenotype
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/diseaseToPhenotype .
+
+# Evidence (ClinVar) - curated ClinVar records by EVA for submission into open targets
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/evidence/sourceId=eva .
+
+# Evidence (CRISPR) 
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/evidence/sourceId=crispr .
+
+# Evidence (Uniprot - variants) 
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/evidence/sourceId=uniprot_variants .
+
+# Baseline RNA expression
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/baselineExpression .
+```
+
+2. Reading the dataset on R
+
+```{bash}
+R
+```
+
+```{r}
+library(dplyr)
+library(sparklyr)
+library(sparklyr.nested)
+```
+
