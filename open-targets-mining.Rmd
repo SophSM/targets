@@ -5,10 +5,19 @@ date: "2023-01-08"
 output: html_document
 ---
 
+## Info
+
+Open targets platform paper: http://europepmc.org/article/MED/27899665
 ## Setup
 
 ```{bash}
-qlogin
+sshfs ssalazar@dna.lavis.unam.mx:/mnt/Citosina/amedina/ssalazar clusterliigh
+sudo diskutil umount force clusterliigh # unmount
+```
+
+
+```{bash CLUSTER LOGIN}
+qlogin -pe openmp 20
 module load r/4.0.2
 cd /mnt/Citosina/amedina/ssalazar/targets/datasets
 ```
@@ -17,9 +26,10 @@ cd /mnt/Citosina/amedina/ssalazar/targets/datasets
 
 - All open targets datasets info: https://platform.opentargets.org/downloads/data
 - Documentation on data accessing: https://platform-docs.opentargets.org/data-access/datasets
+
 ### Downloading the **all** dataset in Parquet format
 
-```{bash}
+```{bash DATASETS}
 # Diseases
 rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/diseases .
 
@@ -40,17 +50,247 @@ rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/lates
 
 # Baseline RNA expression
 rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/baselineExpression .
+
+# Associations - direct (overall score) - Overall metrics for direct target-disease associations
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/associationByOverallDirect .
+
+# Evidence (Oprhanet)
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/evidence/sourceId=orphanet .
+
+# Evidence (cancer biomarkers)
+rsync -rpltvz --delete rsync.ebi.ac.uk::pub/databases/opentargets/platform/latest/output/etl/parquet/evidence/sourceId=cancer_biomarkers .
 ```
 
 2. Reading the dataset on R
 
-```{bash}
+```{bash R}
 R
 ```
 
-```{r}
+```{r LIBRARIES}
 library(dplyr)
 library(sparklyr)
 library(sparklyr.nested)
+library(DBI)
+# spark_disconnect(sc)
+```
+
+```{r Spark Config}
+# https://spark.rstudio.com/guides/connections.html
+# Customize the connection configuration
+conf <- spark_config()
+conf$`sparklyr.cores.local`<- 20
+```
+
+## Data
+
+**ClinVar**
+
+```{r CLINVAR}
+## path to ClinVar (EVA) evidence dataset 
+## directory stored on your local machine
+evidencePath <- "/mnt/Citosina/amedina/ssalazar/targets/datasets/sourceId=eva"
+# evidencePath <- "/Users/sofiasalazar/clusterliigh/targets/datasets/sourceId=eva" # LOCAL
+
+
+## establish connection
+sc <- spark_connect(master = "local", config = conf)
+
+## read evidence dataset
+clinvar <- spark_read_parquet(sc,
+                          path = evidencePath)
+```
+
+
+```{r CLINVAR SCHEMA}        
+## Browse the evidence schema
+columns.clinvar <- clinvar %>%
+  sdf_schema() %>%
+  lapply(function(x) do.call(tibble, x)) %>%
+  bind_rows()
+
+write.csv(columns.clinvar,file="//Users/sofiasalazar/Desktop/LAB/targets/cols_clinvar.csv")
+
+## select fields of interest
+clinvar.select <- clinvar %>%
+  select(targetId,
+         diseaseId,
+         variantRsId,
+         studyId,
+         clinicalSignificances,
+         confidence) %>%
+  sdf_explode(clinicalSignificances)
+
+
+# Convert to a dplyr tibble
+clinvar.select %>%
+  collect()
+```
+
+### Orphanet
+
+```{r ORPHANET}
+evidencePath <- "/Users/sofiasalazar/clusterliigh/targets/datasets/sourceId=orphanet"
+orphanet <- spark_read_parquet(sc,
+                          path = evidencePath)
+## Browse the evidence schema
+columns.orphanet <- orphanet %>%
+  sdf_schema() %>%
+  lapply(function(x) do.call(tibble, x)) %>%
+  bind_rows()
+
+write.csv(columns.orphanet,file="//Users/sofiasalazar/Desktop/LAB/targets/cols_orphanet.csv")
+```
+
+### crispr
+
+```{r CRISPR}
+evidencePath <- "/Users/sofiasalazar/clusterliigh/targets/datasets/sourceId=crispr"
+crispr <- spark_read_parquet(sc,
+                          path = evidencePath)
+## Browse the evidence schema
+columns.crispr <- crispr %>%
+  sdf_schema() %>%
+  lapply(function(x) do.call(tibble, x)) %>%
+  bind_rows()
+
+write.csv(columns.crispr,file="/Users/sofiasalazar/Desktop/LAB/targets/cols_crispr.csv")
+```
+
+### Uniprot - variants
+
+```{r UNIPROT VARIANTS}
+evidencePath <- "/Users/sofiasalazar/clusterliigh/targets/datasets/sourceId=uniprot_variants"
+uniprot.variants <- spark_read_parquet(sc,
+                          path = evidencePath)
+## Browse the evidence schema
+columns.uniprot.variants <- uniprot.variants %>%
+  sdf_schema() %>%
+  lapply(function(x) do.call(tibble, x)) %>%
+  bind_rows()
+
+write.csv(columns.uniprot.variants,file="/Users/sofiasalazar/Desktop/LAB/targets/cols_uniprot.variants.csv")
+```
+
+### cancer_biomarkers
+
+```{r CANCER BIOMARKERS}
+evidencePath <- "/Users/sofiasalazar/clusterliigh/targets/datasets/sourceId=cancer_biomarkers"
+cancer.biomarkers <- spark_read_parquet(sc,
+                          path = evidencePath)
+## Browse the evidence schema
+columns.cancer.biomarkers <- cancer.biomarkers %>%
+  sdf_schema() %>%
+  lapply(function(x) do.call(tibble, x)) %>%
+  bind_rows()
+
+write.csv(columns.cancer.biomarkers,file="/Users/sofiasalazar/Desktop/LAB/targets/cols_cancer.biomarkers.csv")
+```
+
+### Baseline RNA expression
+
+```{r RNA expression}
+evidencePath <- "/Users/sofiasalazar/clusterliigh/targets/datasets/baselineExpression"
+baseline.expression <- spark_read_parquet(sc,
+                          path = evidencePath)
+## Browse the evidence schema
+columns.baseline.expression <- baseline.expression %>%
+  sdf_schema() %>%
+  lapply(function(x) do.call(tibble, x)) %>%
+  bind_rows()
+
+write.csv(columns.baseline.expression[2,2], file="/Users/sofiasalazar/Desktop/LAB/targets/baseline.expression.csv")
+```
+
+```{bash separate fields expression}
+To separate fields from baseline expression
+### separate.sh
+#!/bin/bash
+
+#Define the string value
+text="StructField(efo_code,StringType,true), StructField(label,StringType,true), StructField(organs,ArrayType(StringType,true),true), StructField(anatomical_systems,ArrayType(StringType,true),true), StructField(rna,StructType(StructField(value,DoubleType,true), StructField(zscore,IntegerType,true), StructField(level,IntegerType,true), StructField(unit,StringType,true)),true), StructField(protein,StructType(StructField(reliability,BooleanType,true), StructField(level,IntegerType,true), StructField(cell_type,ArrayType(StructType(StructField(name,StringType,true), StructField(reliability,BooleanType,true), StructField(level,IntegerType,true)),true),true)),true)),true)"
+
+# Set space as the delimiter
+IFS=' '
+
+#Read the split words into an array based on space delimiter
+read -a strarr <<< "$text"
+
+#Count the total words
+echo "There are ${#strarr[*]} words in the text."
+
+# Print each value of the array by using the loop
+for val in "${strarr[@]}";
+do
+  printf "$val\n"
+done
+
+####
+
+./separate.sh > expression.fields.txt
+
+sed '1d'  expression.fields.txt > fields.txt
+
+while read line; do
+  id="$( cut -d ',' -f 1 <<< "$line" )"; echo "$id" 
+done<fields.txt >> fields2.txt
+
+while read line; do
+  id="$( cut -d '(' -f 2 <<< "$line" )"; echo "$id" 
+done<fields2.txt >> cols_baseline.expression.csv
+```
+
+###  Associations - direct (overall score)
+
+```{r}
+evidencePath <- "/Users/sofiasalazar/clusterliigh/targets/datasets/associationByOverallDirect"
+association.overall <- spark_read_parquet(sc,
+                          path = evidencePath)
+## Browse the evidence schema
+columns.association.overall <- association.overall %>%
+  sdf_schema() %>%
+  lapply(function(x) do.call(tibble, x)) %>%
+  bind_rows()
+associationByOverallDirect
+
+write.csv(columns.association.overall, file="/Users/sofiasalazar/Desktop/LAB/targets/cols.associations.csv")
+```
+
+### Targets
+
+```{r TARGETS}
+evidencePath <- "/Users/sofiasalazar/clusterliigh/targets/datasets/targets"
+targets <- spark_read_parquet(sc,
+                          path = evidencePath)
+## Browse the evidence schema
+columns.targets <- targets %>%
+  sdf_schema() %>%
+  lapply(function(x) do.call(tibble, x)) %>%
+  bind_rows()
+associationByOverallDirect
+
+write.csv(columns.targets, file="/Users/sofiasalazar/Desktop/LAB/targets/columns.targets.csv")
+```
+
+
+# Query
+
+```{r}
+output.dir <- "/mnt/Citosina/amedina/ssalazar/targets/query/"
+```
+
+
+```{r}
+# Using SQL
+dbListTables(sc)
+# eva
+
+# test for gene PCSK9
+# ENSG00000169174
+
+query <- dbGetQuery(sc, "SELECT targetId, variantRsId, diseaseId FROM sourceideva_b44830f5_94b5_4a81_b75f_c551abfe5758 WHERE targetId = 'ENSG00000169174'")
+
+PCSK9.df <- as.data.frame(query)
+write.table(PCSK9.df, file = paste0(output.dir,"PCSK9test_query.tsv"), row.names = FALSE, sep="\t")
 ```
 
